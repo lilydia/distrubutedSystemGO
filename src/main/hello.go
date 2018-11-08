@@ -10,6 +10,7 @@ import (
     "time"
     "math/rand"
     "encoding/json"
+	"github.com/tjarratt/babble"
 )
 
 /* Information/Metadata about node */
@@ -62,7 +63,12 @@ func main(){
      */
     if ableToConnect || (!ableToConnect && *makeMasterOnError) {
         if *makeMasterOnError {fmt.Println("Will start this node as master.")}
-        listenOnPort(me)
+		fmt.Println("do i come here" )
+		work := listenOnPort(me)
+		fmt.Println("but i dont come here" )
+		fmt.Println("work", work )
+		workCompleted := sendCompletedWork(me,dest, work)
+		fmt.Println("workCompleted", workCompleted )
     } else {
         fmt.Println("Quitting system. Set makeMasterOnError flag to make the node master.", myid)
     }
@@ -100,7 +106,7 @@ func connectToCluster(me NodeInfo, dest NodeInfo) (bool){
         }
     } else {
         fmt.Println("Connected to cluster. Sending message to node.")
-        text := "Hi nody.. please add me to the cluster.."
+        text := "Hi master. I am ready to work!"
         requestMessage := getAddToClusterMessage(me, dest, text)
         json.NewEncoder(connOut).Encode(&requestMessage)
 
@@ -116,9 +122,15 @@ func connectToCluster(me NodeInfo, dest NodeInfo) (bool){
 
 
 
-func listenOnPort(me NodeInfo){
+func listenOnPort(me NodeInfo)(work string){
     /* Listen for incoming messages */
     ln, _ := net.Listen("tcp", fmt.Sprint(":" + me.Port))
+	
+	/* Generate the work to be distributed */
+	babbler := babble.NewBabbler()
+	babbler.Count = 1
+	assignedWork := babbler.Babble()
+	
     /* accept connection on port */
     /* not sure if looping infinetely on ln.Accept() is good idea */
     for{
@@ -127,15 +139,82 @@ func listenOnPort(me NodeInfo){
             if _, ok := err.(net.Error); ok {
                 fmt.Println("Error received while listening.", me.NodeId)
             }
+
         } else {
             var requestMessage AddToClusterMessage
             json.NewDecoder(connIn).Decode(&requestMessage)
             fmt.Println("Got request:\n" + requestMessage.String())
-
-            text := "Sure buddy.. too easy.."
+			
+            text := "Hi Worker. Your work is to convert the word, " + assignedWork +",to capital letters"
             responseMessage := getAddToClusterMessage(me, requestMessage.Source, text)
             json.NewEncoder(connIn).Encode(&responseMessage)
-            connIn.Close()
+			/*sendCompletedWork(me,requestMessage.Source, work)*/
+            /*connIn.Close()*/
+			fmt.Println("finished condition with work being-" + assignedWork )
         }
+		fmt.Println("in the loop with work being-" + assignedWork )
     }
+	fmt.Println("out of the loop with work being-" + assignedWork )
+	
+	return assignedWork
+} 
+
+
+
+func sendCompletedWork(me NodeInfo, dest NodeInfo, work string) (bool){
+    /* connect to this socket details provided */
+    connOut, err := net.DialTimeout("tcp", dest.NodeIpAddr + ":" + dest.Port, time.Duration(10) * time.Second)
+    if err != nil {
+        if _, ok := err.(net.Error); ok {
+            fmt.Println("Couldn't connect to cluster.", me.NodeId)
+            return false
+        }
+    } else {
+		
+		fmt.Println("Work received by slave.")
+		
+		work = strings.ToUpper(work)
+			
+		text := "Yes master! Here is the completed work-" + work
+        requestMessage := getAddToClusterMessage(me, dest, text)
+        json.NewEncoder(connOut).Encode(&requestMessage)
+
+        decoder := json.NewDecoder(connOut)
+        var responseMessage AddToClusterMessage
+        decoder.Decode(&responseMessage)
+        fmt.Println("Got response:\n" + responseMessage.String())
+        
+        return true
+    }
+    return false
 }
+
+
+func sendCompletedWork2(me NodeInfo, dest NodeInfo, work string)(bool){
+
+    /* slave takes the work. convert to CAP. send completed work back to master */
+        fmt.Println("Work received by slave.")
+		
+		connOut, err := net.DialTimeout("tcp", dest.NodeIpAddr + ":" + dest.Port, time.Duration(10) * time.Second)
+		
+		if err != nil{
+			return false
+		}else{
+			work = strings.ToUpper(work)
+			
+			text := "Yes master! Here is the completed work-" + work
+			requestMessage := getAddToClusterMessage(me, dest, text)
+			json.NewEncoder(connOut).Encode(&requestMessage)
+
+			decoder := json.NewDecoder(connOut)
+			var responseMessage AddToClusterMessage
+			decoder.Decode(&responseMessage)
+			fmt.Println("Got response:\n" + responseMessage.String())
+			
+			return true
+		}
+			
+		return false
+
+	}
+
